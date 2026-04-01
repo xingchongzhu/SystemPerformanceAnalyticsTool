@@ -12,40 +12,18 @@ import argparse
 import subprocess
 
 
-def get_process_pid(process_name):
-    """获取进程PID"""
-    try:
-        result = subprocess.run(
-            ['adb', 'shell', 'pidof', process_name],
-            capture_output=True,
-            text=True,
-            timeout=10
-        )
-        pid = result.stdout.strip()
-        if pid:
-            return pid
-    except Exception as e:
-        print(f"查找进程出错: {e}")
-    return None
-
-
 def kill_process(process_name):
     """杀死进程"""
-    pid = get_process_pid(process_name)
-    if pid:
-        try:
-            subprocess.run(
-                ['adb', 'shell', 'kill', '-9', pid],
-                capture_output=True,
-                timeout=10
-            )
-            print(f"已杀死进程 {process_name} (PID: {pid})")
-            return True
-        except Exception as e:
-            print(f"杀死进程出错: {e}")
-            return False
-    else:
-        print(f"未找到进程 {process_name}")
+    try:
+        subprocess.run(
+            ['adb', 'shell', 'am', 'force-stop', process_name],
+            capture_output=True,
+            timeout=10
+        )
+        print(f"已停止进程 {process_name}")
+        return True
+    except Exception as e:
+        print(f"停止进程出错: {e}")
         return False
 
 
