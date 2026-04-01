@@ -29,23 +29,62 @@ def convert_to_megabytes(value_str):
         except ValueError:
             return 0
 
+def process_slice(slice_content, time_pattern, mem_pattern, swap_pattern, cpu_pattern, 
+                 baidu_mem_pattern, baidu_cpu_pattern,
+                 timestamps, mem_matches, swap_matches, cpu_matches,
+                 baidu_mem_matches, baidu_cpu_matches):
+    """处理单个时间片内容，提取各种性能数据"""
+    # 提取时间戳
+    time_match = time_pattern.search(slice_content)
+    if not time_match:
+        return
+    
+    timestamps.append(time_match.group(1))
+    
+    # 提取内存数据
+    mem_match = mem_pattern.search(slice_content)
+    if mem_match:
+        mem_matches.append(mem_match.groups())
+    
+    # 提取交换空间数据
+    swap_match = swap_pattern.search(slice_content)
+    if swap_match:
+        swap_matches.append(swap_match.groups())
+    
+    # 提取CPU数据
+    cpu_match = cpu_pattern.search(slice_content)
+    if cpu_match:
+        cpu_matches.append(cpu_match.groups())
+    
+    # 提取百度导航内存数据（优化：只搜索包含"Total PSS by process:"的部分）
+    if "Total PSS by process:" in slice_content:
+        # 找到"Total PSS by process:"开始的部分
+        pss_start = slice_content.find("Total PSS by process:")
+        pss_section = slice_content[pss_start:pss_start + 5000]  # 限制搜索范围，提高效率
+        baidu_mem_match = baidu_mem_pattern.search(pss_section)
+        if baidu_mem_match:
+            baidu_mem_matches.append(baidu_mem_match.group(1))
+        else:
+            baidu_mem_matches.append('0K')
+    else:
+        baidu_mem_matches.append('0K')
+    
+    # 提取百度导航CPU数据
+    baidu_cpu_match = baidu_cpu_pattern.search(slice_content)
+    if baidu_cpu_match:
+        baidu_cpu_matches.append(baidu_cpu_match.group(1))
+    else:
+        baidu_cpu_matches.append('0')
+
 def parse_perf_log(log_file, output_dir):
-    # 读取日志文件
-    with open(log_file, 'r', encoding='utf-8') as f:
-        content = f.read()
-    
     # 定义正则表达式模式
-    time_pattern = r'===== 抓取次数：\d+ \| 抓取时间：([\d\- :.]+) \| 脚本已运行：[\d分秒]+ ====='
-    mem_pattern = r'\s*Mem:\s+(\d+(?:\.\d+)?[GMK]?) total,\s+(\d+(?:\.\d+)?[GMK]?) used,\s+(\d+(?:\.\d+)?[GMK]?) free,\s+(\d+(?:\.\d+)?[GMK]?) buffers'
-    swap_pattern = r'\s*Swap:\s+(\d+(?:\.\d+)?[GMK]?) total,\s+(\d+(?:\.\d+)?[GMK]?) used,\s+(\d+(?:\.\d+)?[GMK]?) free,\s+(\d+(?:\.\d+)?[GMK]?) cached'
-    cpu_pattern = r'(\d+)%cpu\s+(\d+)%user\s+(\d+)%nice\s+(\d+)%sys\s+(\d+)%idle\s+(\d+)%iow\s+(\d+)%irq\s+(\d+)%sirq\s+(\d+)%host'
-    # 添加百度导航进程的内存和CPU数据正则表达式
-    baidu_mem_pattern = r'Total PSS by process:(?:.*?\n)*?\s*(\d{1,3}(?:,\d{3})*[K])\s*:\s*com\.baidu\.naviauto\s*\(pid'
-    baidu_cpu_pattern = r'\s*\d+\s+\S+\s+\S+\s+\S+\s+\S+\s+\S+\s+\S+\s+[RS]\s+(\d+(?:\.\d+)?)\s+.*com\.baidu\.navia'
-    
-    # 分割日志为时间片
-    slice_pattern = r'(===== 抓取次数：\d+ \| 抓取时间：[^=]+ =====[\s\S]*?)(?====== 抓取次数：|$)'
-    slices = re.findall(slice_pattern, content)
+    time_pattern = re.compile(r'===== 抓取次数：\d+ \| 抓取时间：([\d\- :.]+) \| 脚本已运行：[\d分秒]+ =====')
+    mem_pattern = re.compile(r'\s*Mem:\s+(\d+(?:\.\d+)?[GMK]?) total,\s+(\d+(?:\.\d+)?[GMK]?) used,\s+(\d+(?:\.\d+)?[GMK]?) free,\s+(\d+(?:\.\d+)?[GMK]?) buffers')
+    swap_pattern = re.compile(r'\s*Swap:\s+(\d+(?:\.\d+)?[GMK]?) total,\s+(\d+(?:\.\d+)?[GMK]?) used,\s+(\d+(?:\.\d+)?[GMK]?) free,\s+(\d+(?:\.\d+)?[GMK]?) cached')
+    cpu_pattern = re.compile(r'(\d+)%cpu\s+(\d+)%user\s+(\d+)%nice\s+(\d+)%sys\s+(\d+)%idle\s+(\d+)%iow\s+(\d+)%irq\s+(\d+)%sirq\s+(\d+)%host')
+    # 优化百度导航进程的内存和CPU数据正则表达式
+    baidu_mem_pattern = re.compile(r'\s*(\d{1,3}(?:,\d{3})*[K])\s*:\s*com\.baidu\.naviauto\s*\(pid')
+    baidu_cpu_pattern = re.compile(r'\s*\d+\s+\S+\s+\S+\s+\S+\s+\S+\s+\S+\s+\S+\s+[RS]\s+(\d+(?:\.\d+)?)\s+.*com\.baidu\.navia')
     
     # 从每个时间片提取数据
     timestamps = []
@@ -55,44 +94,48 @@ def parse_perf_log(log_file, output_dir):
     baidu_mem_matches = []
     baidu_cpu_matches = []
     
-    for slice_content in slices:
-        # 提取时间戳
-        time_match = re.search(time_pattern, slice_content)
-        if time_match:
-            timestamps.append(time_match.group(1))
-        else:
-            continue
-        
-        # 提取内存数据
-        mem_match = re.search(mem_pattern, slice_content)
-        if mem_match:
-            mem_matches.append(mem_match.groups())
-        
-        # 提取交换空间数据
-        swap_match = re.search(swap_pattern, slice_content)
-        if swap_match:
-            swap_matches.append(swap_match.groups())
-        
-        # 提取CPU数据
-        cpu_match = re.search(cpu_pattern, slice_content)
-        if cpu_match:
-            cpu_matches.append(cpu_match.groups())
-        
-        # 提取百度导航内存数据
-        baidu_mem_match = re.search(baidu_mem_pattern, slice_content, re.DOTALL)
-        if baidu_mem_match:
-            baidu_mem_matches.append(baidu_mem_match.group(1))
-        else:
-            # 使用默认值
-            baidu_mem_matches.append('0K')
-        
-        # 提取百度导航CPU数据
-        baidu_cpu_match = re.search(baidu_cpu_pattern, slice_content)
-        if baidu_cpu_match:
-            baidu_cpu_matches.append(baidu_cpu_match.group(1))
-        else:
-            # 使用默认值
-            baidu_cpu_matches.append('0')
+    # 逐行处理日志文件，减少内存占用
+    current_slice = []
+    in_slice = False
+    
+    print(f"开始处理文件: {log_file}")
+    line_count = 0
+    slice_count = 0
+    
+    with open(log_file, 'r', encoding='utf-8') as f:
+        for line in f:
+            line_count += 1
+            
+            # 检测时间片开始
+            if "===== 抓取次数：" in line and "抓取时间：" in line:
+                # 处理上一个时间片
+                if in_slice and current_slice:
+                    slice_content = ''.join(current_slice)
+                    process_slice(slice_content, time_pattern, mem_pattern, swap_pattern, cpu_pattern, 
+                                baidu_mem_pattern, baidu_cpu_pattern,
+                                timestamps, mem_matches, swap_matches, cpu_matches,
+                                baidu_mem_matches, baidu_cpu_matches)
+                    slice_count += 1
+                    if slice_count % 10 == 0:
+                        print(f"已处理 {slice_count} 个时间片")
+                    
+                # 开始新的时间片
+                current_slice = [line]
+                in_slice = True
+            elif in_slice:
+                # 添加到当前时间片
+                current_slice.append(line)
+    
+    # 处理最后一个时间片
+    if in_slice and current_slice:
+        slice_content = ''.join(current_slice)
+        process_slice(slice_content, time_pattern, mem_pattern, swap_pattern, cpu_pattern, 
+                    baidu_mem_pattern, baidu_cpu_pattern,
+                    timestamps, mem_matches, swap_matches, cpu_matches,
+                    baidu_mem_matches, baidu_cpu_matches)
+        slice_count += 1
+    
+    print(f"文件处理完成，共处理 {line_count} 行，{slice_count} 个时间片")
     
     # 确保所有数据列表长度一致
     min_length = min(len(timestamps), len(mem_matches), len(swap_matches), len(cpu_matches),
