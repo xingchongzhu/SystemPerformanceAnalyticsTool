@@ -49,35 +49,33 @@ def kill_process(process_name):
         return False
 
 
-def format_time(seconds):
+def format_time(minutes):
     """格式化时间显示"""
-    hours = int(seconds // 3600)
-    minutes = int((seconds % 3600) // 60)
-    secs = int(seconds % 60)
+    hours = int(minutes // 60)
+    mins = int(minutes % 60)
     if hours > 0:
-        return f"{hours}小时{minutes}分{secs}秒"
-    elif minutes > 0:
-        return f"{minutes}分{secs}秒"
+        return f"{hours}小时{mins}分钟"
     else:
-        return f"{secs}秒"
+        return f"{mins}分钟"
 
 
 def main():
     parser = argparse.ArgumentParser(description='定时kill进程工具')
-    parser.add_argument('wait_time', type=int, help='等待时间（秒）')
+    parser.add_argument('wait_time', type=int, help='等待时间（分钟）')
     parser.add_argument('--process', '-p', default='com.baidu.naviauto',
                         help='要kill的进程名 (默认: com.baidu.naviauto)')
 
     args = parser.parse_args()
 
     process_name = args.process
-    wait_seconds = args.wait_time
+    wait_minutes = args.wait_time
 
-    if wait_seconds <= 0:
+    if wait_minutes <= 0:
         print("错误: 等待时间必须大于0")
         sys.exit(1)
 
-    print(f"等待 {format_time(wait_seconds)} 后将杀死进程: {process_name}")
+    wait_seconds = wait_minutes * 60
+    print(f"等待 {wait_minutes} 分钟后将杀死进程: {process_name}")
     print("-" * 40)
 
     # 倒计时显示剩余时间
@@ -91,16 +89,12 @@ def main():
         if remaining <= 0:
             break
 
-        # 每秒打印剩余时间
+        # 每30秒打印一次剩余时间
         current_seconds = int(remaining)
         current_minute = current_seconds // 60
 
-        # 只在分钟变化或最后10秒时显示更详细信息
-        if current_minute != last_printed_minute or current_seconds <= 10:
-            if current_minute > 0:
-                print(f"剩余时间: {format_time(remaining)}")
-            else:
-                print(f"剩余时间: {current_seconds} 秒")
+        if current_minute != last_printed_minute:
+            print(f"剩余时间: {current_minute} 分 {current_seconds % 60} 秒")
             last_printed_minute = current_minute
 
         time.sleep(0.5)
