@@ -56,18 +56,24 @@ def process_slice(slice_content, time_pattern, mem_pattern, swap_pattern, cpu_pa
     if cpu_match:
         cpu_matches.append(cpu_match.groups())
     
-    # 提取百度导航内存数据（优化：只搜索包含"Total PSS by process:"的部分）
-    if "Total PSS by process:" in slice_content:
-        # 找到"Total PSS by process:"开始的部分
+    # 提取百度导航内存数据（支持 Total RSS by process 和 Total PSS by process）
+    baidu_mem_value = '0K'
+    # 优先查找 Total RSS by process
+    if "Total RSS by process:" in slice_content:
+        rss_start = slice_content.find("Total RSS by process:")
+        rss_section = slice_content[rss_start:rss_start + 5000]
+        baidu_mem_match = baidu_mem_pattern.search(rss_section)
+        if baidu_mem_match:
+            baidu_mem_value = baidu_mem_match.group(1)
+    # 如果没找到，尝试查找 Total PSS by process
+    elif "Total PSS by process:" in slice_content:
         pss_start = slice_content.find("Total PSS by process:")
-        pss_section = slice_content[pss_start:pss_start + 5000]  # 限制搜索范围，提高效率
+        pss_section = slice_content[pss_start:pss_start + 5000]
         baidu_mem_match = baidu_mem_pattern.search(pss_section)
         if baidu_mem_match:
-            baidu_mem_matches.append(baidu_mem_match.group(1))
-        else:
-            baidu_mem_matches.append('0K')
-    else:
-        baidu_mem_matches.append('0K')
+            baidu_mem_value = baidu_mem_match.group(1)
+
+    baidu_mem_matches.append(baidu_mem_value)
     
     # 提取百度导航CPU数据
     baidu_cpu_match = baidu_cpu_pattern.search(slice_content)
